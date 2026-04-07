@@ -1,6 +1,8 @@
 import streamlit as st
 from utils.file_handler import fetch_github_files, extract_zip_files
 from utils.filter import filter_files, format_report
+from utils.chunker import chunk_all_files
+from ml.vectorizer import build_vectorizer
 
 st.set_page_config(
     page_title="Codebase RAG",
@@ -72,13 +74,8 @@ html, body, [class*="css"] {
     color: var(--text) !important;
     font-family: 'JetBrains Mono', monospace !important;
 }
-.stTextInput input:focus, .stTextArea textarea:focus {
-    border-color: var(--accent) !important;
-}
-.stFileUploader > div {
-    background: #ffffff !important;
-    border: 1px dashed var(--border) !important;
-}
+.stTextInput input:focus, .stTextArea textarea:focus { border-color: var(--accent) !important; }
+.stFileUploader > div { background: #ffffff !important; border: 1px dashed var(--border) !important; }
 .stButton button {
     width: 100%;
     background: var(--accent) !important;
@@ -104,14 +101,8 @@ html, body, [class*="css"] {
     border: 1px solid var(--border);
     border-radius: 10px;
 }
-.stat-num {
-    font-size: 2rem;
-    font-weight: 800;
-    color: var(--accent);
-    font-family: 'JetBrains Mono', monospace;
-}
+.stat-num { font-size: 2rem; font-weight: 800; color: var(--accent); font-family: 'JetBrains Mono', monospace; }
 .stat-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
-
 .file-item {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.75rem;
@@ -121,15 +112,28 @@ html, body, [class*="css"] {
     border-radius: 6px;
     margin: 3px 0;
     color: var(--muted);
-    display: flex;
-    justify-content: space-between;
 }
-.file-item .priority-tag {
-    color: var(--accent);
-    font-size: 0.65rem;
-    border: 1px solid rgba(0,200,150,0.3);
-    border-radius: 10px;
-    padding: 1px 7px;
+.chunk-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    margin: 6px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+}
+.chunk-header { color: var(--accent); font-size: 0.68rem; margin-bottom: 4px; font-weight: 600; }
+.chunk-body { color: var(--text); white-space: pre-wrap; line-height: 1.5; max-height: 120px; overflow: hidden; }
+.cap-warning {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: #92400e;
+    margin-top: 0.5rem;
 }
 .report-box {
     background: #f0fdf4;
@@ -142,11 +146,26 @@ html, body, [class*="css"] {
     color: #166534;
     white-space: pre-wrap;
 }
-.skipped-note {
+.tfidf-box {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    padding: 1rem 1.5rem;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.72rem;
-    color: var(--warn);
-    margin-top: 0.3rem;
+    font-size: 0.78rem;
+    line-height: 1.8;
+    color: #1e40af;
+}
+.term-pill {
+    display: inline-block;
+    background: rgba(0,200,150,0.1);
+    border: 1px solid rgba(0,200,150,0.3);
+    color: #065f46;
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    margin: 2px 3px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -155,7 +174,12 @@ html, body, [class*="css"] {
 for key, default in {
     "answer": None,
     "files": [],
+    "chunks": [],
+    "vectorizer": None,
+    "tfidf_matrix": None,
     "filter_report": None,
+    "chunk_report": None,
+    "vec_report": None,
     "source_label": "",
 }.items():
     if key not in st.session_state:
@@ -193,68 +217,111 @@ if st.button("📂  Load Codebase"):
         if error:
             st.error(f"❌ {error}")
         else:
-            # ── Phase 3: Run smart filter ──
             with st.spinner("Filtering files..."):
-                filtered, report = filter_files(raw_files)
+                filtered, filter_report = filter_files(raw_files)
 
-            st.session_state.files        = filtered
-            st.session_state.filter_report = report
-            st.session_state.source_label = label
-            st.session_state.answer       = None
+            with st.spinner("Chunking code..."):
+                chunks, chunk_report = chunk_all_files(filtered)
 
-            skipped = report["total_input"] - report["passed"]
-            st.success(f"✅ Loaded {report['passed']} files after filtering  ({skipped} skipped)")
+            with st.spinner("Building TF-IDF vectors..."):
+                vectorizer, tfidf_matrix, vec_report = build_vectorizer(chunks)
 
-# ── Stats + Filter Report ─────────────────────────────────────────────────────
-if st.session_state.files:
-    files  = st.session_state.files
-    report = st.session_state.filter_report
+            st.session_state.files         = filtered
+            st.session_state.chunks        = chunks
+            st.session_state.vectorizer    = vectorizer
+            st.session_state.tfidf_matrix  = tfidf_matrix
+            st.session_state.filter_report = filter_report
+            st.session_state.chunk_report  = chunk_report
+            st.session_state.vec_report    = vec_report
+            st.session_state.source_label  = label
+            st.session_state.answer        = None
+
+            st.success(
+                f"✅ {filter_report['passed']} files → "
+                f"{chunk_report['total_chunks']} chunks → "
+                f"{vec_report['n_features']} TF-IDF features"
+            )
+
+# ── Stats ─────────────────────────────────────────────────────────────────────
+if st.session_state.files and st.session_state.filter_report and st.session_state.chunk_report:
+    files         = st.session_state.files
+    chunks        = st.session_state.chunks
+    filter_report = st.session_state.filter_report
+    chunk_report  = st.session_state.chunk_report
+    vec_report    = st.session_state.vec_report
 
     st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
-    st.markdown('<p class="section-label">Codebase Summary</p>', unsafe_allow_html=True)
-
-    total_lines = sum(len(f["content"].splitlines()) for f in files)
+    st.markdown('<p class="section-label">Pipeline Stats</p>', unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.markdown(f'<div class="stat-box"><div class="stat-num">{report["passed"]}</div><div class="stat-label">Files</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="stat-box"><div class="stat-num">{filter_report["passed"]}</div><div class="stat-label">Files</div></div>', unsafe_allow_html=True)
     with c2:
-        st.markdown(f'<div class="stat-box"><div class="stat-num">{total_lines:,}</div><div class="stat-label">Lines</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="stat-box"><div class="stat-num">{chunk_report["total_chunks"]}</div><div class="stat-label">Chunks</div></div>', unsafe_allow_html=True)
     with c3:
-        st.markdown(f'<div class="stat-box"><div class="stat-num">{report["priority_files"]}</div><div class="stat-label">Priority</div></div>', unsafe_allow_html=True)
+        n_feat = vec_report["n_features"] if vec_report else 0
+        st.markdown(f'<div class="stat-box"><div class="stat-num">{n_feat}</div><div class="stat-label">TF-IDF Features</div></div>', unsafe_allow_html=True)
     with c4:
-        skipped = report["total_input"] - report["passed"]
-        st.markdown(f'<div class="stat-box"><div class="stat-num" style="color:#f59e0b">{skipped}</div><div class="stat-label">Skipped</div></div>', unsafe_allow_html=True)
+        vocab = vec_report["vocab_size"] if vec_report else 0
+        st.markdown(f'<div class="stat-box"><div class="stat-num">{vocab}</div><div class="stat-label">Vocab Size</div></div>', unsafe_allow_html=True)
 
-    # Filter report detail
+    if chunk_report["capped"]:
+        st.markdown('<div class="cap-warning">⚠️ Chunk cap reached (200). Some chunks were trimmed.</div>', unsafe_allow_html=True)
+
+    # TF-IDF info
+    if vec_report and "top_terms" in vec_report:
+        with st.expander("📊 TF-IDF Vectorizer Info"):
+            pills = "".join(f'<span class="term-pill">{t}</span>' for t in vec_report["top_terms"])
+            st.markdown(f"""
+            <div class="tfidf-box">
+                <b>Chunks vectorized :</b> {vec_report['n_chunks']}<br>
+                <b>Feature dimensions:</b> {vec_report['n_features']}<br>
+                <b>Vocabulary size   :</b> {vec_report['vocab_size']}<br>
+                <b>Top informative terms:</b><br>
+                <div style="margin-top:6px">{pills}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Filter report
     with st.expander("🔍 Filter Report"):
-        st.markdown(f'<div class="report-box">{format_report(report)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="report-box">{format_report(filter_report)}</div>', unsafe_allow_html=True)
+
+    # Chunk preview
+    with st.expander(f"🧩 Preview chunks ({chunk_report['total_chunks']} total)"):
+        show_n = min(10, len(chunks))
+        st.caption(f"Showing first {show_n} of {len(chunks)} chunks")
+        for chunk in chunks[:show_n]:
+            preview = chunk["content"][:300] + ("..." if len(chunk["content"]) > 300 else "")
+            st.markdown(f"""
+            <div class="chunk-card">
+                <div class="chunk-header">📄 {chunk['file_path']}  ·  chunk #{chunk['chunk_index']}  ·  {chunk['line_count']} lines</div>
+                <div class="chunk-body">{preview}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
     # File list
-    with st.expander(f"📁 {report['passed']} files passed filtering"):
+    with st.expander(f"📁 {filter_report['passed']} files loaded"):
         for f in files:
-            priority_tag = '<span class="priority-tag">⭐ priority</span>' if f.get("is_priority") else ""
             lines = len(f["content"].splitlines())
-            st.markdown(
-                f'<div class="file-item"><span>📄 {f["path"]} &nbsp;·&nbsp; {f["size_kb"]}KB &nbsp;·&nbsp; {lines} lines</span>{priority_tag}</div>',
-                unsafe_allow_html=True
-            )
+            st.markdown(f'<div class="file-item">📄 {f["path"]} &nbsp;·&nbsp; {f["size_kb"]}KB &nbsp;·&nbsp; {lines} lines</div>', unsafe_allow_html=True)
 
 # ── Question ──────────────────────────────────────────────────────────────────
 st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
 question = st.text_area("Ask a question", placeholder="e.g. How does authentication work in this project?")
 
 if st.button("🔍  Analyze & Answer"):
-    if not st.session_state.files:
+    if not st.session_state.chunks:
         st.warning("Please load a codebase first.")
     elif not question.strip():
         st.warning("Please enter a question.")
     else:
         st.session_state.answer = (
             f"[Placeholder — LLM answer coming in Phase 8]\n\n"
-            f"Source   : {st.session_state.source_label}\n"
-            f"Files    : {len(st.session_state.files)}\n"
-            f"Question : {question}"
+            f"Source  : {st.session_state.source_label}\n"
+            f"Files   : {len(st.session_state.files)}\n"
+            f"Chunks  : {len(st.session_state.chunks)}\n"
+            f"Features: {st.session_state.vec_report['n_features']}\n"
+            f"Question: {question}"
         )
 
 if st.session_state.answer:
