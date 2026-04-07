@@ -1,17 +1,18 @@
 import os
 import shutil
 import git
+from dotenv import load_dotenv
 
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import HuggingFacePipeline
+from langchain_groq import ChatGroq
 
-from transformers import pipeline
+load_dotenv()
 
 IGNORE_FOLDERS = ["node_modules", ".git", "venv", "__pycache__", "build", "dist"]
-ALLOWED_EXTENSIONS = (".py", ".js", ".ts", ".jsx")
+ALLOWED_EXTENSIONS = (".py", ".js", ".ts", ".jsx", ".tsx", ".md")
 
 
 def load_github_repo(repo_url):
@@ -49,11 +50,10 @@ def load_github_repo(repo_url):
 
                 except:
                     ignored_files.append(file_path)
-
             else:
                 ignored_files.append(file_path)
 
-    return documents[:50], repo_name, allowed_files, ignored_files
+    return documents[:80], repo_name, allowed_files, ignored_files
 
 
 def setup_rag(repo_url):
@@ -61,8 +61,8 @@ def setup_rag(repo_url):
     documents, repo_name, allowed_files, ignored_files = load_github_repo(repo_url)
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=300,
-        chunk_overlap=50
+        chunk_size=400,
+        chunk_overlap=80
     )
 
     chunks = splitter.split_documents(documents)
@@ -71,15 +71,11 @@ def setup_rag(repo_url):
 
     vectorstore = FAISS.from_documents(chunks, embeddings)
 
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
-    # ✅ FIXED LLM
-    pipe = pipeline(
-        "text-generation",   # ✅ FIX HERE
-        model="gpt2",
-        max_new_tokens=150
+    llm = ChatGroq(
+        model="llama-3.1-8b-instant",   # ✅ WORKING MODEL
+        api_key=os.getenv("GROQ_API_KEY")
     )
-
-    llm = HuggingFacePipeline(pipeline=pipe)
 
     return retriever, llm, repo_name, allowed_files, ignored_files
