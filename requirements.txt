@@ -1,6 +1,9 @@
-streamlit>=1.32.0
-requests>=2.31.0
-scikit-learn>=1.4.0
-numpy>=1.26.0
-python-dotenv>=1.0.0
-anthropic>=0.25.0
+streamlit
+faiss-cpu
+gitpython
+langchain
+langchain-community
+langchain-text-splitters
+sentence-transformers
+transformers
+torch
