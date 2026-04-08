@@ -192,11 +192,11 @@ if "repo_name" in st.session_state:
     st.write(f"Allowed Files: {len(st.session_state.allowed)}")
     st.write(f"Ignored Files: {len(st.session_state.ignored)}")
 
-    with st.expander("📂 Allowed Files"):
+    with st.expander("Allowed Files"):
         for f in st.session_state.allowed[:50]:
             st.write(f)
 
-    with st.expander("🚫 Ignored Files"):
+    with st.expander("Ignored Files"):
         for f in st.session_state.ignored[:50]:
             st.write(f)
 
@@ -217,14 +217,20 @@ if "retriever" in st.session_state:
 
         with st.spinner("Thinking..."):
 
-            docs_scores = st.session_state.retriever.vectorstore.similarity_search_with_score(query, k=4)
-            docs = [d for d, s in docs_scores if s < 0.8]
+            # improve query slightly (VERY important)
+            enhanced_query = query + " project purpose overview readme"
+
+            docs = st.session_state.retriever.invoke(enhanced_query)
+
+            # fallback if nothing found
+            if len(docs) == 0:
+                docs = st.session_state.retriever.vectorstore.similarity_search(query, k=3)
 
             context = ""
             for d in docs:
                 context += f"\nFile: {d.metadata.get('file_name')}\n{d.page_content[:200]}\n"
 
-                prompt = f"""
+            prompt = f"""
                             You are an expert code assistant.
 
                             Strict rules:
@@ -266,8 +272,8 @@ if "retriever" in st.session_state:
 
             if file_name not in shown and any(word in content for word in query.lower().split()):
                 shown.add(file_name)
-                st.write(f"📄 {file_name}")
-                st.code(d.page_content[:150])
+                st.write(f"{file_name}")
+                st.code(d.page_content[:500])
 
         if not shown:
             st.write("No strongly relevant files found.")

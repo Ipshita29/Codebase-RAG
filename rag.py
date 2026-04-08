@@ -12,7 +12,7 @@ from langchain_groq import ChatGroq
 load_dotenv()
 
 IGNORE_FOLDERS = ["node_modules", ".git", "venv", "__pycache__", "build", "dist"]
-ALLOWED_EXTENSIONS = (".py", ".js", ".ts", ".jsx", ".tsx", ".md")
+ALLOWED_EXTENSIONS = (".py", ".js", ".ts", ".jsx", ".tsx", ".md", ".html")
 
 
 def load_github_repo(repo_url):
@@ -53,7 +53,7 @@ def load_github_repo(repo_url):
             else:
                 ignored_files.append(file_path)
 
-    return documents[:80], repo_name, allowed_files, ignored_files
+    return documents, repo_name, allowed_files, ignored_files
 
 
 def setup_rag(repo_url):
@@ -61,8 +61,8 @@ def setup_rag(repo_url):
     documents, repo_name, allowed_files, ignored_files = load_github_repo(repo_url)
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=400,
-        chunk_overlap=80
+        chunk_size=800,
+        chunk_overlap=150
     )
 
     chunks = splitter.split_documents(documents)
