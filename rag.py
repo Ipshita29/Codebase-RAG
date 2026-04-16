@@ -15,6 +15,7 @@ IGNORE_FOLDERS = ["node_modules", ".git", "venv", "__pycache__", "build", "dist"
 ALLOWED_EXTENSIONS = (".py", ".js", ".ts", ".jsx", ".tsx", ".md", ".html")
 
 
+# github loader
 def load_github_repo(repo_url):
     repo_path = "temp_repo"
 
@@ -23,7 +24,15 @@ def load_github_repo(repo_url):
 
     git.Repo.clone_from(repo_url, repo_path)
 
-    repo_name = repo_url.split("/")[-1]
+    return process_repo(repo_path, repo_url.split("/")[-1])
+
+
+# local loader
+def load_local_repo(repo_path):
+    return process_repo(repo_path, os.path.basename(repo_path))
+
+
+def process_repo(repo_path, repo_name):
 
     documents = []
     allowed_files = []
@@ -56,9 +65,13 @@ def load_github_repo(repo_url):
     return documents, repo_name, allowed_files, ignored_files
 
 
-def setup_rag(repo_url):
+# RAG setup
+def setup_rag(source_path, is_local=False):
 
-    documents, repo_name, allowed_files, ignored_files = load_github_repo(repo_url)
+    if is_local:
+        documents, repo_name, allowed_files, ignored_files = load_local_repo(source_path)
+    else:
+        documents, repo_name, allowed_files, ignored_files = load_github_repo(source_path)
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=800,
@@ -74,7 +87,7 @@ def setup_rag(repo_url):
     retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
     llm = ChatGroq(
-        model="llama-3.1-8b-instant",   
+        model="llama-3.1-8b-instant",
         api_key=os.getenv("GROQ_API_KEY")
     )
 
